@@ -1,0 +1,54 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Secrets / credentials
+.env
+.env.*
+kaggle.json
+
+# Data folders
+data/raw/
+data/processed/
+data/interim/
+data/external/
+
+# Model / experiment outputs
+models/
+checkpoints/
+outputs/
+runs/
+wandb/
+mlruns/
+
+# Model files
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.pkl
+*.joblib
+
+# Archives
+*.zip
+*.tar
+*.tar.gz
+*.7z
+*.rar
+
+# Logs
+*.log
+logs/
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
