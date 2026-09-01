@@ -18,6 +18,14 @@ The original project evaluated recipe-derived and web-derived class priors as if
 
 Use canonical IDs from `data/ontology/visible_ingredients.json`. The annotation interface shows the corresponding hints.
 
+The interface groups ingredients into collapsible categories. Each ingredient has one mutually exclusive state:
+
+- **None**: the default; the image does not support the label.
+- **Visible**: the component is visually identifiable.
+- **Uncertain**: a component is present, but its identity is visually ambiguous.
+
+Open only the categories relevant to the image, choose the supported states, then click **Save + Next**. The current row is written to the annotation CSV immediately. Do not use Ctrl-click or try to select the same ingredient in two lists.
+
 ### `visible_ingredients`
 
 Select a label only when visual evidence supports it in this image. Examples:

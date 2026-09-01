@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-from sklearn.metrics import cohen_kappa_score
 
 from .ontology import IngredientOntology
 
@@ -120,6 +119,10 @@ def annotation_agreement(
     second: pd.DataFrame,
     ontology: IngredientOntology,
 ) -> dict[str, object]:
+    # Agreement metrics are only needed in Notebook 02. Keeping this import local
+    # lets the annotation interface start without loading the full SciPy/sklearn stack.
+    from sklearn.metrics import cohen_kappa_score
+
     first = first.sort_values("sample_id").reset_index(drop=True)
     second = second.sort_values("sample_id").reset_index(drop=True)
     if not first["sample_id"].equals(second["sample_id"]):
