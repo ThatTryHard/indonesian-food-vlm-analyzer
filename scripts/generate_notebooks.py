@@ -67,11 +67,13 @@ if not (PROJECT_ROOT / "src").exists():
         REPOSITORY_URL, str(PROJECT_ROOT),
     ], check=True)
 
-subprocess.run([sys.executable, "-m", "pip", "install", "-q", "-r", str(PROJECT_ROOT / "requirements-kaggle.txt")], check=True)
+# Notebook 01 only needs packages already supplied by Kaggle's pinned base image.
+# Replacing NumPy or Pandas inside a running kernel can mix incompatible binary modules.
 os.chdir(PROJECT_ROOT)
 sys.path.insert(0, str(PROJECT_ROOT))
 
 print("Project root:", PROJECT_ROOT)
+print("Environment: Kaggle pinned base packages (no in-kernel replacement)")
 print("Git revision:", subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip())"""),
         code("""import hashlib
 import json
