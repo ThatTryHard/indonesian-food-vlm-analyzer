@@ -1,6 +1,10 @@
 # Python
 __pycache__/
 *.py[cod]
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
 
 # Virtual environment
 .venv/
@@ -47,6 +51,12 @@ mlruns/
 # Logs
 *.log
 logs/
+
+# Generated benchmark/run artifacts (the status-only metrics file is versioned)
+artifacts/*
+!artifacts/metrics.json
+data/annotations/*.csv
+data/annotations/*.zip
 
 # OS files
 .DS_Store

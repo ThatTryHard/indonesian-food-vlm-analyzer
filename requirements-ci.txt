@@ -1,0 +1,7 @@
+numpy==2.3.5
+pandas==2.2.3
+Pillow==12.0.0
+scikit-learn==1.8.0
+iterative-stratification==0.1.9
+pytest==9.0.2
+ruff==0.14.10

@@ -1,0 +1,79 @@
+{
+  "project": {
+    "name": "Indonesian Food Visible-Ingredient Benchmark",
+    "version": "2.0.0",
+    "primary_task": "per-image visible ingredient recognition",
+    "artifact_subdir": "indonesian-food-vlm-artifacts",
+    "seed": 42
+  },
+  "datasets": {
+    "recipe_pretraining": {
+      "slug": "pes12017000148/food-ingredients-and-recipe-dataset-with-images/versions/1",
+      "path_env": "FOOD_RECIPE_DATASET_DIR",
+      "role": "weak recipe-presence pretraining only; never final ground truth"
+    },
+    "indonesian_target": {
+      "slug": "rizkyyk/dataset-food-classification/versions/5",
+      "path_env": "INDONESIAN_FOOD_DATASET_DIR",
+      "role": "260-image human-annotated primary benchmark"
+    },
+    "recipe_corpus_optional": {
+      "slug": "albertnathaniel12/food-recipes-dataset/versions/2",
+      "path_env": "INDONESIAN_RECIPE_CORPUS_DIR",
+      "role": "optional weak-supervision development source; never test ground truth"
+    }
+  },
+  "benchmark": {
+    "samples_per_class": 20,
+    "train_per_class": 12,
+    "validation_per_class": 4,
+    "test_per_class": 4,
+    "expected_classes": [
+      "Ayam Goreng",
+      "Burger",
+      "French Fries",
+      "Gado-Gado",
+      "Ikan Goreng",
+      "Mie Goreng",
+      "Nasi Goreng",
+      "Nasi Padang",
+      "Pizza",
+      "Rawon",
+      "Rendang",
+      "Sate",
+      "Soto"
+    ],
+    "required_annotators": 2,
+    "perceptual_hash_max_distance": 2,
+    "manifest_version": "visible-v1"
+  },
+  "training": {
+    "image_size": 224,
+    "batch_size": 32,
+    "pretraining_epochs": 5,
+    "finetuning_epochs": 15,
+    "learning_rate": 0.0003,
+    "weight_decay": 0.0001,
+    "maximum_positive_class_weight": 20.0,
+    "adapted_learning_rate_multiplier": 0.3333333333333333,
+    "recipe_split_fractions": {
+      "train": 0.70,
+      "validation": 0.15,
+      "test": 0.15
+    },
+    "global_threshold_grid": [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+  },
+  "vlm": {
+    "model_id": "Qwen/Qwen2-VL-2B-Instruct",
+    "revision": "895c3a49bc3fa70a340399125c650a463535e71c",
+    "prompt_version": "visible-zero-shot-v1",
+    "max_new_tokens": 256,
+    "max_image_side": 512
+  },
+  "evaluation": {
+    "bootstrap_iterations": 2000,
+    "confidence_level": 0.95,
+    "permutation_iterations": 10000,
+    "precision_at_k": 5
+  }
+}
