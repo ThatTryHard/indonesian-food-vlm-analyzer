@@ -10,11 +10,11 @@ The target ontology contains 43 canonical phrase labels. Each label has a visual
 
 ## Benchmark construction
 
-The benchmark contains 20 images from each of 13 source-directory classes. Image files are validated before sampling, and exact or perceptual duplicates are grouped across the complete target dataset. Each class contributes 12 training images, 4 validation images, and 4 test images.
+The benchmark contains 20 images from each of 13 source-directory classes. Image files are validated, and exact or perceptual duplicates are grouped across the complete target dataset. A deterministic reserve pool is then screened by a human. Collages, heavy overlays, unrelated multi-dish scenes, wrong-class files, non-food images, unreadable files, and sensitive content are rejected and replaced within the same class.
 
-Split membership is sealed before annotation. This keeps finished labels from influencing test composition. Every sampled image, configuration file, ontology file, VLM prompt, and protocol implementation is recorded by hash so later runs can verify that they use the same benchmark.
+After every class has 20 accepted images, each class contributes 12 training images, 4 validation images, and 4 test images. Split membership is sealed before ingredient annotation. This keeps finished ingredient labels from influencing test composition. Every quality decision, sampled image, configuration file, ontology file, VLM prompt, and protocol implementation is recorded by hash so later runs can verify that they use the same benchmark.
 
-Two annotators label all 260 images independently. Exact agreements are accepted, while disagreements require a documented human decision. This avoids treating one class-level recipe list as ground truth for every image and avoids automatically resolving difficult cases by union or intersection.
+Annotator A labels all 260 images. Annotator B independently labels the 104 validation and test images. Exact evaluation-set agreements are accepted, while disagreements require a documented human decision. This puts the strongest label controls on model selection and final claims while keeping the portfolio workload practical. The 156 training labels remain single-annotator labels and are reported as such.
 
 ## Model comparison
 

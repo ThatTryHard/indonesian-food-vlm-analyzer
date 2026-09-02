@@ -14,12 +14,12 @@ Only the target benchmark is final ground truth. The recipe dataset and web snip
 
 - Verify every image with PIL.
 - Record dimensions, bytes, SHA-256, and a 64-bit difference hash.
-- Collapse exact and near-duplicate groups before sampling.
+- Collapse exact and near-duplicate groups before candidate selection.
 - Quarantine any exact/near copies found in the optional recipe-pretraining source before model fitting.
-- Sample 20 unique images per class with seed 42.
-- Seal 12 train, 4 validation, and 4 test images per class before annotation.
-- Hash the manifest in `manifest_lock.json`.
-- Obtain two independent visible-component annotations and adjudicate disagreement.
+- Human-screen deterministic reserve candidates and replace semantic failures within the same class.
+- After 20 images per class are accepted, seal 12 train, 4 validation, and 4 test images per class before ingredient annotation.
+- Hash the candidate pool, quality decisions, and manifest in `manifest_lock.json`.
+- Obtain 260 primary annotations and 104 independent validation/test annotations; adjudicate evaluation disagreements.
 
 ## Not included in Git
 

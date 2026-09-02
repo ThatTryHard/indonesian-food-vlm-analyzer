@@ -1,6 +1,8 @@
 {
   "benchmark_rows_required": 260,
-  "reason": "Awaiting two independent annotation passes and human adjudication.",
+  "primary_annotation_rows_required": 260,
+  "secondary_evaluation_rows_required": 104,
+  "reason": "Awaiting semantic quality screening, 260 primary annotations, 104 independent evaluation annotations, and adjudication.",
   "status": "blocked_pending_human_annotations",
   "systems": []
 }

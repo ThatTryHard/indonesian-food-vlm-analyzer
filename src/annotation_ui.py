@@ -311,7 +311,7 @@ class AnnotationApp:
 
 
 class AdjudicationApp:
-    """Resolve only rows on which the two independent passes disagree."""
+    """Resolve evaluation rows on which the two independent annotations disagree."""
 
     def __init__(self, queue: pd.DataFrame, ontology, image_root: str | Path, output_csv: str | Path):
         try:

@@ -1,8 +1,8 @@
 """Dataset inventory, corruption checks, duplicate grouping, and sampling.
 
-Samples are selected from validated, deduplicated images. Train, validation, and
-test membership is sealed before annotation so later modeling choices cannot
-reshape the test set.
+Candidates come from validated, deduplicated images and receive human semantic
+screening. Train, validation, and test membership is then sealed before ingredient
+annotation so later modeling choices cannot reshape the test set.
 """
 
 from __future__ import annotations
@@ -233,6 +233,136 @@ def _sealed_split_labels(n: int, train_n: int, validation_n: int, test_n: int) -
     if train_n + validation_n + test_n != n:
         raise ValueError("Per-class split counts must sum to samples_per_class")
     return ["train"] * train_n + ["validation"] * validation_n + ["test"] * test_n
+
+
+def sample_quality_candidate_pool(
+    inventory: pd.DataFrame,
+    candidates_per_class: int = 100,
+    seed: int = 42,
+) -> pd.DataFrame:
+    """Create a deterministic reserve pool for human semantic-quality screening.
+
+    File integrity and duplicate checks cannot identify collages, heavy graphics,
+    class mismatches, or unrelated multi-dish scenes. The candidate pool is built
+    before any split exists, and a human accepts images until every class has enough
+    clean representatives. Rejections are therefore replaced within the same class
+    without altering an already sealed benchmark.
+    """
+    if candidates_per_class < 1:
+        raise ValueError("candidates_per_class must be positive")
+    required = {
+        "relative_path",
+        "food_class",
+        "status",
+        "sha256",
+        "dhash",
+        "duplicate_group",
+        "width",
+        "height",
+        "bytes",
+    }
+    if missing := required.difference(inventory.columns):
+        raise ValueError(f"Inventory missing columns: {sorted(missing)}")
+
+    valid = inventory[inventory["status"].eq("ok")].copy()
+    representatives = valid.sort_values(["food_class", "duplicate_group", "sha256"]).drop_duplicates(
+        "duplicate_group", keep="first"
+    )
+    rng = np.random.default_rng(seed)
+    rows: list[pd.DataFrame] = []
+    for food_class, group in representatives.groupby("food_class", sort=True):
+        if len(group) < candidates_per_class:
+            raise ValueError(
+                f"Class {food_class!r} has only {len(group)} unique valid images; "
+                f"{candidates_per_class} quality candidates are required"
+            )
+        order = rng.permutation(len(group))[:candidates_per_class]
+        candidates = group.iloc[order].copy().reset_index(drop=True)
+        candidates["candidate_rank"] = np.arange(1, len(candidates) + 1)
+        rows.append(candidates)
+
+    pool = pd.concat(rows, ignore_index=True)
+    pool["candidate_id"] = pool["sha256"].str[:16]
+    if pool["candidate_id"].duplicated().any():
+        raise ValueError("Candidate IDs are not unique")
+    columns = [
+        "candidate_id",
+        "candidate_rank",
+        "relative_path",
+        "food_class",
+        "sha256",
+        "dhash",
+        "duplicate_group",
+        "width",
+        "height",
+        "bytes",
+    ]
+    return pool[columns].sort_values(["food_class", "candidate_rank"]).reset_index(drop=True)
+
+
+def manifest_from_screened_candidates(
+    accepted_candidates: pd.DataFrame,
+    samples_per_class: int = 20,
+    train_per_class: int = 12,
+    validation_per_class: int = 4,
+    test_per_class: int = 4,
+    seed: int = 42,
+    dataset_slug: str = "",
+    manifest_version: str = "visible-v2",
+) -> pd.DataFrame:
+    """Assign a sealed split only after semantic quality screening is complete."""
+    required = {
+        "candidate_id",
+        "relative_path",
+        "food_class",
+        "sha256",
+        "dhash",
+        "duplicate_group",
+        "width",
+        "height",
+        "bytes",
+    }
+    if missing := required.difference(accepted_candidates.columns):
+        raise ValueError(f"Accepted candidates missing columns: {sorted(missing)}")
+    if accepted_candidates["candidate_id"].duplicated().any():
+        raise ValueError("Accepted candidate IDs must be unique")
+    if accepted_candidates["duplicate_group"].duplicated().any():
+        raise ValueError("Accepted candidates cannot share a duplicate group")
+
+    split_labels = _sealed_split_labels(samples_per_class, train_per_class, validation_per_class, test_per_class)
+    rng = np.random.default_rng(seed)
+    rows: list[pd.DataFrame] = []
+    for food_class, group in accepted_candidates.groupby("food_class", sort=True):
+        if len(group) != samples_per_class:
+            raise ValueError(
+                f"Class {food_class!r} has {len(group)} accepted images; exactly {samples_per_class} are required"
+            )
+        chosen = group.sort_values("candidate_id").iloc[rng.permutation(samples_per_class)].copy()
+        chosen["split"] = split_labels
+        rows.append(chosen)
+
+    manifest = pd.concat(rows, ignore_index=True)
+    manifest["sample_id"] = manifest["candidate_id"]
+    manifest["dataset_slug"] = dataset_slug
+    manifest["manifest_version"] = manifest_version
+    columns = [
+        "sample_id",
+        "relative_path",
+        "food_class",
+        "split",
+        "dataset_slug",
+        "manifest_version",
+        "sha256",
+        "dhash",
+        "duplicate_group",
+        "width",
+        "height",
+        "bytes",
+    ]
+    manifest = manifest[columns].sort_values(["food_class", "split", "sample_id"]).reset_index(drop=True)
+    if manifest["sample_id"].duplicated().any():
+        raise ValueError("Sample IDs are not unique")
+    return manifest
 
 
 def sample_annotation_manifest(

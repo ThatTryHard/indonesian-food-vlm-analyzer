@@ -2,7 +2,7 @@
 
 A reproducible Kaggle and GitHub portfolio project comparing CNN and Vision-Language Model predictions on **visible food components in individual images**.
 
-> **Current status:** benchmark construction is ready and human annotation is the next stage. Final scores remain unpublished until two independent annotation passes are complete and every disagreement has been adjudicated. See [Reproducible Results](reports/RESULTS.md).
+> **Current status:** semantic image screening and human annotation are the next stages. Final scores remain unpublished until the 260-row primary annotation, 104-row independent evaluation annotation, and evaluation-set adjudication are complete. See [Reproducible Results](reports/RESULTS.md).
 
 ## Project design
 
@@ -12,9 +12,10 @@ The benchmark includes:
 
 - one primary task, visible-component recognition in a specific image;
 - a frozen 43-label phrase ontology with visual-evidence rules;
-- 260 corruption-checked and globally deduplicated images across 13 source classes;
+- a human semantic-quality gate that replaces collages, heavy overlays, class mismatches, and unsuitable multi-dish scenes before splitting;
+- 260 file-validated, globally deduplicated, and human-screened images across 13 source classes;
 - sealed 12/4/4 train, validation, and test membership per class;
-- two independent annotation passes followed by human adjudication;
+- 260 primary annotations plus 104 independent validation/test annotations and adjudication;
 - prevalence, frozen-backbone, adapted CNN, and zero-shot VLM baselines;
 - validation-only checkpoint, threshold, and prompt decisions;
 - grouped bootstrap confidence intervals and a paired permutation test;
@@ -33,13 +34,13 @@ It will:
 
 1. download or resolve the exact target dataset;
 2. verify images and detect exact/near duplicates;
-3. create and hash the immutable 260-row manifest;
-4. create two independently ordered annotation sheets;
-5. launch an autosaving image annotation interface;
-6. export a benchmark packet for the next notebook.
+3. launch a one-click semantic quality screen with same-class replacements;
+4. seal and hash the immutable 260-row manifest only after 20 images per class are accepted;
+5. create a 260-row primary annotation sheet and 104-row validation/test secondary sheet;
+6. launch the autosaving visible-ingredient interface;
+7. export a resumable benchmark packet for the next notebook.
 
-Read [Annotation Guide](docs/ANNOTATION_GUIDE.md) before labeling. Annotator A and B must not inspect each other's sheets.
-The design uses 260 unique images but requires 520 independent judgments: 260 in each pass before adjudication.
+Read [Annotation Guide](docs/ANNOTATION_GUIDE.md) before labeling. Annotator A labels all 260 images. Annotator B independently labels the 104 validation/test images without inspecting A's answers. This concentrates double annotation where label quality directly determines model selection and final evaluation.
 For a second Kaggle session, attach the first exported packet; the notebook restores it into writable storage before resuming.
 
 ### 2. Adjudicate, train, and evaluate
@@ -49,8 +50,8 @@ Attach the completed benchmark packet and open [`notebooks/02_train_evaluate.ipy
 It will:
 
 1. verify the manifest lock and both completed sheets;
-2. report inter-annotator agreement;
-3. launch an adjudication interface for every disagreement;
+2. report inter-annotator agreement on the 104 overlapping evaluation images;
+3. launch an adjudication interface for every evaluation-label disagreement;
 4. optionally pretrain canonical labels on weak recipe-presence data;
 5. train the CNN baselines using target train/validation only;
 6. run the pinned zero-shot Qwen2-VL prompt on validation;
@@ -70,6 +71,16 @@ The task is not “recover the recipe from a photo.” The positive target is a 
 | Brown meat with unclear species | uncertain meat label, not a confident positive |
 | Garlic normally used in the dish but not visible | no `garlic` label |
 | Dark glaze that might be sweet soy sauce | `dark_sauce` or uncertain, not hidden recipe inference |
+
+Before ingredient annotation, image files also pass a semantic eligibility rule:
+
+| Candidate image | Quality-screen behavior |
+|---|---|
+| One mixed dish or meal on one plate | Accept |
+| Collage or multi-panel montage | Reject and replace within the same class |
+| Heavy cartoon/text overlay | Reject and replace within the same class |
+| Multiple unrelated dishes with no primary subject | Reject and replace within the same class |
+| Wrong class, non-food, or unreadable | Reject and replace within the same class |
 
 The ontology is versioned at [`data/ontology/visible_ingredients.json`](data/ontology/visible_ingredients.json).
 
@@ -114,7 +125,7 @@ python -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
 pip install -r requirements-ci.txt
 ruff check src scripts tests
-pytest -q
+python -m pytest -q
 python scripts/generate_notebooks.py
 python scripts/validate_notebooks.py
 python scripts/publish_results.py --metrics artifacts/metrics.json --output /tmp/RESULTS.md

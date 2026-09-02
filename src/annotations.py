@@ -1,6 +1,7 @@
-"""Annotation validation, agreement measurement, and explicit adjudication.
+"""Annotation validation, overlap agreement, and explicit adjudication.
 
-Two independent per-image annotation sheets are required. Disagreements remain
+The primary annotator covers all benchmark rows. The secondary annotator covers
+validation and test independently. Their evaluation-set disagreements remain
 unresolved until the adjudication file is completed by a human.
 """
 
@@ -240,6 +241,52 @@ def finalize_adjudication(queue: pd.DataFrame, ontology: IngredientOntology) -> 
     final["no_visible_ontology_label"] = no_visible_label_values
     final["resolution_notes"] = queue["resolution_notes"].fillna("")
     return final
+
+
+def combine_primary_and_adjudicated_evaluation(
+    primary: pd.DataFrame,
+    adjudicated_evaluation: pd.DataFrame,
+    manifest: pd.DataFrame,
+    secondary_splits: list[str],
+) -> pd.DataFrame:
+    """Combine primary-only training labels with adjudicated evaluation labels."""
+    evaluation_ids = set(manifest.loc[manifest["split"].isin(secondary_splits), "sample_id"])
+    training_ids = set(manifest.loc[~manifest["split"].isin(secondary_splits), "sample_id"])
+    primary_training = primary[primary["sample_id"].isin(training_ids)].copy()
+    if set(primary_training["sample_id"]) != training_ids:
+        raise ValueError("Primary annotations do not cover every training sample")
+    if set(adjudicated_evaluation["sample_id"]) != evaluation_ids:
+        raise ValueError("Adjudicated annotations do not cover every evaluation sample")
+    if training_ids.intersection(evaluation_ids):
+        raise ValueError("Training and evaluation sample IDs overlap")
+
+    base_columns = [
+        "sample_id",
+        "relative_path",
+        "food_class",
+        "split",
+        "visible_ingredients",
+        "uncertain_ingredients",
+        "unreadable",
+        "non_food",
+        "no_visible_ontology_label",
+    ]
+    primary_required = {*base_columns, "notes"}
+    evaluation_required = {*base_columns, "resolution_notes"}
+    if missing := primary_required.difference(primary_training.columns):
+        raise ValueError(f"Primary training annotations missing columns: {sorted(missing)}")
+    if missing := evaluation_required.difference(adjudicated_evaluation.columns):
+        raise ValueError(f"Adjudicated evaluation annotations missing columns: {sorted(missing)}")
+
+    primary_final = primary_training[[*base_columns, "notes"]].rename(columns={"notes": "resolution_notes"})
+    primary_final["annotation_source"] = "primary_annotator_only"
+    evaluation_final = adjudicated_evaluation[[*base_columns, "resolution_notes"]].copy()
+    evaluation_final["annotation_source"] = "double_annotated_adjudicated"
+    final = pd.concat([primary_final, evaluation_final], ignore_index=True)
+    expected_ids = set(manifest["sample_id"])
+    if set(final["sample_id"]) != expected_ids or len(final) != len(manifest):
+        raise ValueError("Combined annotations do not match the sealed manifest")
+    return final.sort_values("sample_id").reset_index(drop=True)
 
 
 def annotation_progress(sheet: pd.DataFrame) -> dict[str, int]:

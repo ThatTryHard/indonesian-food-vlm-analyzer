@@ -135,8 +135,8 @@ def render_results_markdown(metrics: dict[str, Any]) -> str:
     if status != "complete":
         lines.extend(
             [
-                "Final scores are intentionally unavailable until the 260-image annotations are complete,",
-                "all disagreements are adjudicated, and the sealed test gate is opened once.",
+                "Final scores are intentionally unavailable until semantic quality screening, the 260-row",
+                "primary annotation, the 104-row independent evaluation annotation, and adjudication are complete.",
             ]
         )
         return "\n".join(lines)

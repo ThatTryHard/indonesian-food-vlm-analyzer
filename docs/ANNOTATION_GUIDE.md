@@ -2,17 +2,31 @@
 
 ## Purpose
 
-The original project evaluated recipe-derived and web-derived class priors as if they were per-image ingredient truth. This guide replaces that invalid target with a human-annotated benchmark: **mark only components supported by the specific image**.
+This guide defines a human-annotated benchmark in which only components supported by the specific image are marked.
 
 ## Benchmark design
 
 - 13 food classes.
-- 20 de-duplicated images per class.
+- 20 de-duplicated and human-screened images per class.
 - 260 images total.
-- 520 independent image judgments in total (260 per pass), plus adjudication of disagreements.
-- Sealed before annotation: 12 train, 4 validation, and 4 test images per class.
-- Two independent annotation sheets followed by explicit adjudication.
+- 364 image judgments in total: 260 from Annotator A and 104 validation/test judgments from Annotator B.
+- Sealed after semantic quality screening and before ingredient annotation: 12 train, 4 validation, and 4 test images per class.
+- Independent evaluation annotation followed by explicit adjudication.
 - The test split must never be opened for prompt design, alias editing, threshold selection, or qualitative cherry-picking.
+
+## Semantic quality screen
+
+Before split assignment, accept only one assessable food photograph with a clear primary subject. A mixed meal on one plate is valid. Reject the candidate and let the interface supply a same-class replacement when it contains:
+
+- a collage or multi-panel montage;
+- a heavy cartoon, text, or graphic overlay;
+- multiple unrelated dishes with no primary subject;
+- the wrong source class;
+- no assessable food;
+- extreme blur, obstruction, or other unreadable content;
+- visible personal or sensitive information.
+
+Quality screening shows the expected source class so class mismatches can be detected. Ingredient annotation hides source class and split. Quality decisions must not include ingredient judgments.
 
 ## Labels
 
@@ -67,10 +81,12 @@ The three flags are mutually exclusive and cannot be combined with visible or un
 
 ## Independent passes
 
-Annotator A and Annotator B must work independently. They must not inspect each other's labels before both sheets are complete. If only one human annotator is available, perform the second pass after a washout period and disclose this limitation; it is not equivalent to two independent annotators.
+Annotator A labels all 260 images. Annotator B independently labels only the 104 validation and test images. They must not inspect each other's labels before the secondary sheet is complete. If only one human annotator is available, perform the secondary pass after a washout period and disclose this limitation; it is not equivalent to two independent annotators.
+
+The 156 training rows are single-annotator labels. The 104 model-selection and final-evaluation rows are double-annotated and adjudicated.
 
 The notebook interface hides the directory class during annotation to reduce recipe-prior bias. Do not inspect the manifest's `food_class` column while labeling.
 
 ## Adjudication
 
-The pipeline automatically accepts exact agreement. Every disagreement appears in `adjudication_queue.csv`; a human must fill `resolved_visible_ingredients`, `resolved_uncertain_ingredients`, and `resolution_notes`. The evaluation notebook refuses to continue while any disagreement is unresolved.
+The pipeline automatically accepts exact agreement on the 104 overlapping images. Every evaluation-set disagreement appears in `adjudication_queue.csv`; a human must fill `resolved_visible_ingredients`, `resolved_uncertain_ingredients`, and `resolution_notes`. The evaluation notebook refuses to continue while any disagreement is unresolved.

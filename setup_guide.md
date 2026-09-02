@@ -8,18 +8,19 @@ Use Kaggle with one NVIDIA GPU, internet enabled for the first dependency/model 
 
 1. Import `notebooks/01_build_benchmark.ipynb` from GitHub.
 2. Enable internet. GPU is optional for this notebook.
-3. Run cells from the top. The notebook clones the repository and installs the pinned Kaggle requirements.
+3. Run cells from the top. The notebook clones the repository and uses Kaggle's compatible base environment without replacing NumPy or pandas inside the live kernel.
 4. The target dataset resolves from the exact slug in `configs/project.json`. To use an attached copy, set:
 
    ```python
    os.environ["INDONESIAN_FOOD_DATASET_DIR"] = "/kaggle/input/your-exact-folder"
    ```
 
-5. Run benchmark construction once. Existing manifests are never silently replaced.
-6. Read `docs/ANNOTATION_GUIDE.md`.
-7. Set `ANNOTATOR_ID="annotator_a"`, complete the first independent pass, and download the packet.
-8. Use a separate session or annotator for `annotator_b`; attach the first packet, set `FOOD_VLM_BENCHMARK_PACKET` if auto-discovery is ambiguous, and do not inspect A's sheet.
-9. Download `benchmark_packet.zip` after each session.
+5. Review the semantic quality interface. Accept one clear food photograph; reject collages, heavy overlays, wrong classes, unrelated multi-dish scenes, non-food, unreadable, or sensitive images. Each rejection automatically advances to a same-class reserve candidate.
+6. Rerun the quality finalization cell after every class reaches 20 accepted images. This is the first point at which the 12/4/4 split and manifest are sealed.
+7. Read `docs/ANNOTATION_GUIDE.md`.
+8. Set `ANNOTATOR_ID="annotator_a"`, label all 260 images, and download the packet.
+9. Give the packet to a different person in a separate session. Set `ANNOTATOR_ID="annotator_b"`; this sheet contains only the 104 validation/test images. Do not inspect A's answers.
+10. Download `benchmark_packet.zip` after every work session.
 
 The interface saves every confirmed row immediately, but Kaggle storage is temporary; keep external copies.
 
@@ -72,7 +73,19 @@ For a local GPU experiment, install a matching PyTorch/torchvision build for you
 
 ### Manifest already exists
 
-This is intentional protection. Reuse the locked manifest. Use `--force` with `scripts/build_benchmark.py` only when deliberately creating a new benchmark version; never replace one mid-experiment.
+This is intentional protection. Reuse the locked manifest. Do not alter quality decisions or replace images after ingredient annotation starts. A deliberately new benchmark version must use a fresh output directory and new lock.
+
+### Quality screen is incomplete
+
+The manifest does not exist yet. Continue the quality interface until every class has 20 accepted images, rerun the finalization cell, and download the resumable packet. Blank reserve rows are expected and do not need review after a class reaches 20 acceptances.
+
+### Older packet is rejected
+
+Packets created before semantic screening do not contain `quality_candidate_pool.csv` or `quality_screen.csv` and cannot be upgraded into the new locked protocol. Start Notebook 01 in a fresh session. GitHub history, source code, and the original Kaggle dataset remain unchanged; only the old benchmark packet is replaced.
+
+### An unsuitable image appears during annotation
+
+Do not mark a collage as `Not food`, and do not combine labels across panels. Stop the pass and review whether the wrong packet was attached. Semantic failures belong in the pre-split quality screen.
 
 ### Annotation validation fails
 

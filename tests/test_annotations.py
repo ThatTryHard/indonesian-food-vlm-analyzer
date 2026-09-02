@@ -5,6 +5,7 @@ import pandas as pd
 from src.annotations import (
     annotation_agreement,
     build_adjudication_queue,
+    combine_primary_and_adjudicated_evaluation,
     create_annotation_sheet,
     finalize_adjudication,
     validate_annotation_sheet,
@@ -83,3 +84,53 @@ def test_adjudicated_flags_are_validated():
     queue.loc[disagreement, "resolution_notes"] = "No frozen label is visually supported."
     final = finalize_adjudication(queue, ONTOLOGY)
     assert bool(final.loc[final["sample_id"].eq("b"), "no_visible_ontology_label"].iloc[0])
+
+
+def test_secondary_sheet_can_cover_evaluation_subset_only():
+    manifest = _manifest()
+    primary = create_annotation_sheet(manifest, "alice")
+    primary.loc[:, "visible_ingredients"] = ["rice", "egg"]
+    evaluation_manifest = manifest[manifest["split"].eq("test")].copy()
+    secondary = create_annotation_sheet(evaluation_manifest, "bob")
+    secondary.loc[:, "visible_ingredients"] = ["egg"]
+
+    validated_primary = validate_annotation_sheet(primary, manifest, ONTOLOGY)
+    validated_secondary = validate_annotation_sheet(secondary, evaluation_manifest, ONTOLOGY)
+
+    assert len(validated_primary) == 2
+    assert len(validated_secondary) == 1
+    assert validated_secondary.iloc[0]["split"] == "test"
+
+
+def test_primary_train_combines_with_adjudicated_evaluation():
+    manifest = _manifest()
+    primary = create_annotation_sheet(manifest, "alice")
+    primary.loc[:, "visible_ingredients"] = ["rice", "egg"]
+    primary = validate_annotation_sheet(primary, manifest, ONTOLOGY)
+    adjudicated = pd.DataFrame(
+        {
+            "sample_id": ["b"],
+            "relative_path": ["B/b.jpg"],
+            "food_class": ["B"],
+            "split": ["test"],
+            "visible_ingredients": ["chicken"],
+            "uncertain_ingredients": [""],
+            "unreadable": [False],
+            "non_food": [False],
+            "no_visible_ontology_label": [False],
+            "resolution_notes": ["Adjudicated disagreement."],
+        }
+    )
+
+    final = combine_primary_and_adjudicated_evaluation(
+        primary,
+        adjudicated,
+        manifest,
+        secondary_splits=["test"],
+    )
+
+    indexed = final.set_index("sample_id")
+    assert len(final) == 2
+    assert indexed.loc["a", "annotation_source"] == "primary_annotator_only"
+    assert indexed.loc["b", "annotation_source"] == "double_annotated_adjudicated"
+    assert indexed.loc["b", "visible_ingredients"] == "chicken"

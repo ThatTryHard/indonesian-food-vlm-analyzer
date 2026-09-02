@@ -2,7 +2,7 @@
 
 ## Status
 
-Benchmark construction complete in code; human annotation pending. No final performance claim is currently valid.
+Semantic screening and benchmark construction are complete in code; human screening and annotation are pending. No final performance claim is currently valid.
 
 ## Intended use
 
@@ -19,8 +19,8 @@ Benchmark construction complete in code; human annotation pending. No final perf
 ## Data
 
 - Weak recipe-image data for optional feature pretraining.
-- A 260-image target benchmark sampled from 13 directory classes.
-- Two independent visible-component annotations and adjudication are required.
+- A 260-image target benchmark selected from 13 directory classes after human semantic screening.
+- Annotator A covers all 260 images; Annotator B independently covers the 104 validation/test images, followed by evaluation-set adjudication.
 
 Burger, Pizza, and French Fries are included in the source dataset; therefore the benchmark is a mixed food-class collection rather than a comprehensive Indonesian-cuisine census.
 
@@ -31,6 +31,7 @@ Burger, Pizza, and French Fries are included in the source dataset; therefore th
 - Domain shift in lighting, plating, camera, restaurant, and household images.
 - VLM outputs can be fluent but unsupported.
 - Small per-class test counts produce wide uncertainty intervals.
+- Training labels come from one annotator, so training-label noise is not captured by evaluation-set agreement statistics.
 - Grouped intervals use only 13 food-class clusters and should be treated as exploratory, not population-wide inference.
 - The pre-registered headline run uses one deterministic training seed; its intervals do not include between-seed optimization variance.
 

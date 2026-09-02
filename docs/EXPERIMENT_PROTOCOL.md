@@ -8,17 +8,19 @@ The only primary modeling claim is performance on **per-image visible-ingredient
 
 1. Inventory and verify every target image.
 2. Group exact duplicates and near duplicates globally, including cross-class copies.
-3. Select 20 unique images per class using seed 42.
-4. Seal 12/4/4 train/validation/test images per class before annotation.
-5. Lock the ontology, zero-shot prompt, config, and protocol-code digest at the same time.
-6. Complete two independent annotation passes.
-7. Report agreement and adjudicate every disagreement.
+3. Create a deterministic reserve pool before any split exists.
+4. Human-screen candidates for collages, heavy overlays, unrelated multi-dish scenes, class mismatches, non-food content, unreadable images, and sensitive information.
+5. Replace each rejection with the next candidate from the same class until 20 images per class are accepted.
+6. Seal 12/4/4 train/validation/test images per class before ingredient annotation.
+7. Lock the quality decisions, candidate pool, ontology, zero-shot prompt, config, and protocol-code digest at the same time.
+8. Have Annotator A label all 260 images and Annotator B independently label all 104 validation/test images.
+9. Report agreement on the 104-image overlap and adjudicate every evaluation-set disagreement.
 
 The test split is never used to build aliases, select prompts, tune thresholds, choose checkpoints, or select qualitative examples.
 
 ## Trade-off: balance versus multi-label stratification
 
-With only 20 annotated images per class, using the finished labels to rearrange the test set would leak label information into benchmark design. The target benchmark therefore prioritizes pre-annotation class balance and a sealed test. Within larger recipe-pretraining data, grouping and iterative multi-label stratification are used because there is sufficient scale and no human benchmark is being constructed.
+With only 20 annotated images per class, using the finished ingredient labels to rearrange the test set would leak label information into benchmark design. The target benchmark therefore prioritizes class balance and a test sealed before ingredient labels exist. Semantic quality decisions happen first because unsuitable files must be replaced before membership is locked. These decisions judge image eligibility, not ingredients. Within larger recipe-pretraining data, grouping and iterative multi-label stratification are used because there is sufficient scale and no human benchmark is being constructed.
 
 ## Training stages
 
@@ -32,10 +34,12 @@ With only 20 annotated images per class, using the finished labels to rearrange 
 
 ### Stage B: visible-ingredient fine-tuning
 
-- Fine-tune on adjudicated benchmark train images.
+- Fine-tune on the primary annotator's screened train images.
 - Compare a frozen ResNet18 linear probe with a last-block-plus-head model.
 - Select checkpoint, threshold, and prompt solely on validation.
 - Include a prevalence/top-*k* baseline.
+
+Training labels are single-annotator labels and this limitation must be disclosed. Validation and test labels receive independent second annotation and adjudication because they determine model selection and final claims.
 
 The delivery target is a Kaggle/GitHub research portfolio, not an operating decision system, so there is no legitimate false-positive/false-negative cost matrix to invent. Checkpoint/model selection uses validation micro-average-precision and the global decision threshold uses validation micro-F1; precision and recall are reported separately. Any later product use must replace that threshold rule with an explicit cost or utility function supplied by the owner.
 
@@ -65,8 +69,10 @@ For sample-F1, a correctly predicted all-negative image receives 1.0; an all-neg
 
 Final evaluation is allowed only if all of these are present:
 
-- completed and validated annotation sheets;
-- zero unresolved adjudication rows;
+- a completed 260-row primary annotation sheet;
+- a completed 104-row independent validation/test sheet;
+- zero unresolved validation/test adjudication rows;
+- quality-screen and candidate-pool hashes matching the sealed lock;
 - manifest digest matches `manifest_lock.json`;
 - frozen ontology and prompt versions match the config;
 - model checkpoint and validation-selected threshold are saved;

@@ -39,18 +39,18 @@ def notebook(cells: list[dict]) -> dict:
 
 NOTEBOOK_01 = notebook(
     [
-        markdown("""# 01: Build and Annotate the 260-Image Benchmark
+        markdown("""# 01: Screen, Build, and Annotate the 260-Image Benchmark
 
-This notebook creates a corruption-checked, deduplicated, class-balanced benchmark. It seals train, validation, and test membership before preparing two independent visible-ingredient annotation passes.
+This notebook first removes semantic dataset failures such as collages, heavy overlays, class mismatches, and unrelated multi-dish scenes. Rejected candidates are replaced within the same source class. Only then are 260 accepted images assigned to the sealed 156/52/52 train, validation, and test split.
 
-Primary task: **per-image visible-component recognition**. Recipe knowledge, hidden ingredients, web associations, food naming, and nutrition are not ground truth for this task.
+Annotator A labels all 260 images. Annotator B independently labels the 104 validation and test images, giving the final evaluation set double-annotated and adjudicated ground truth.
 
-Run this notebook first. Notebook 02 is intentionally blocked until both annotation passes and human adjudication are complete."""),
+Primary task: **per-image visible-component recognition**. Recipe knowledge, hidden ingredients, web associations, food naming, and nutrition are not ground truth for this task."""),
         markdown("""## Define the target and frozen ontology
 
 The ontology uses canonical multiword component labels and gives every label a visual-evidence rule. Recipe-writing fragments and preparation terms such as `all`, `at`, `freshly`, and `coarsely` are not model targets.
 
-This keeps the task visually defensible. Hidden recipe ingredients cannot be scored as observable image evidence. Label validity therefore takes priority over vocabulary breadth, and hidden spices such as garlic and turmeric are outside the primary ground truth unless they are visibly identifiable."""),
+A valid mixed dish on one plate remains eligible. A collage, graphic montage, wrong-class image, or scene with no primary dish does not. Quality screening happens before split membership exists, while ingredient annotation remains blinded to source class and split."""),
         code("""# Kaggle setup: clone the project when the notebook was imported without repository files.
 import os
 import subprocess
@@ -68,7 +68,7 @@ if not (PROJECT_ROOT / "src").exists():
     ], check=True)
 
 # Notebook 01 only needs packages already supplied by Kaggle's pinned base image.
-# Replacing NumPy or Pandas inside a running kernel can mix incompatible binary modules.
+# Replacing NumPy/Pandas in a live notebook can mix old and new binary modules.
 os.chdir(PROJECT_ROOT)
 sys.path.insert(0, str(PROJECT_ROOT))
 
@@ -97,8 +97,7 @@ ARTIFACT_ROOT = artifact_dir(config)
 BENCHMARK_DIR = ARTIFACT_ROOT / "benchmark"
 BENCHMARK_DIR.mkdir(parents=True, exist_ok=True)
 
-# Resume safely from a packet exported by an earlier Kaggle session.
-# Copy it into writable storage because /kaggle/input is read-only.
+# Resume a partial quality screen or annotation pass from a previously exported packet.
 packet_override = os.environ.get("FOOD_VLM_BENCHMARK_PACKET")
 packet_source = Path(packet_override) if packet_override else None
 if packet_source is None and Path("/kaggle/input").exists():
@@ -108,8 +107,12 @@ if packet_source is None and Path("/kaggle/input").exists():
     if len(candidates) == 1:
         packet_source = candidates[0]
     elif len(candidates) > 1:
-        print("Multiple prior packets found; set FOOD_VLM_BENCHMARK_PACKET to resume one explicitly.")
-if packet_source is not None and not (BENCHMARK_DIR / "benchmark_manifest.csv").exists():
+        print("Multiple prior packets found; set FOOD_VLM_BENCHMARK_PACKET explicitly.")
+local_packet_exists = any(
+    (BENCHMARK_DIR / filename).exists()
+    for filename in ["quality_screen.csv", "benchmark_manifest.csv"]
+)
+if packet_source is not None and not local_packet_exists:
     if not packet_source.exists():
         raise FileNotFoundError(packet_source)
     if packet_source.is_file() and packet_source.suffix.lower() == ".zip":
@@ -117,7 +120,8 @@ if packet_source is not None and not (BENCHMARK_DIR / "benchmark_manifest.csv").
     else:
         source_dir = packet_source.parent if packet_source.is_file() else packet_source
         packet_filenames = {
-            "benchmark_manifest.csv", "manifest_lock.json", "image_inventory.csv", "corrupt_images.csv",
+            "quality_candidate_pool.csv", "quality_screen.csv", "benchmark_manifest.csv",
+            "manifest_lock.json", "image_inventory.csv", "corrupt_images.csv",
             "annotations_annotator_a.csv", "annotations_annotator_b.csv",
         }
         for filename in packet_filenames:
@@ -133,12 +137,7 @@ ontology_table = pd.DataFrame([
 print("Primary task:", config["project"]["primary_task"])
 print("Ontology version:", ontology.version, "| labels:", len(ontology.ids))
 display(ontology_table)"""),
-        markdown("""## Validate images and seal the split
-
-Every image is verified, hashed with SHA-256, assigned to a perceptual duplicate group, and sampled once. The manifest contains 20 unique images per class: 12 train, 4 validation, and 4 test.
-
-Split membership is frozen before annotation to prevent duplicate contamination and keep finished labels from influencing test composition. The benchmark uses pre-annotation class balance instead of rearranging samples after ingredient labels are known."""),
-        code("""# Resolve the exact Kaggle dataset by its frozen slug; an explicit environment path can override it.
+        code("""# Resolve the exact Kaggle dataset by its frozen slug.
 dataset_config = config["datasets"]["indonesian_target"]
 explicit_target = os.environ.get(dataset_config["path_env"])
 TARGET_DATASET_ROOT = Path(explicit_target) if explicit_target else Path(kagglehub.dataset_download(dataset_config["slug"]))
@@ -147,87 +146,160 @@ print("Dataset slug:", dataset_config["slug"])
 print("Resolved root:", TARGET_DATASET_ROOT)
 if not TARGET_DATASET_ROOT.exists():
     raise FileNotFoundError(TARGET_DATASET_ROOT)"""),
-        code("""# Build once. Existing manifests are never silently overwritten.
+        markdown("""## Stage 1: Screen image quality before sealing
+
+File decoding and perceptual hashes cannot detect a collage or a wrong-class photograph. The interface therefore reviews deterministic reserve candidates class by class. Choose **Accept** for one assessable food photograph. Otherwise choose the exact rejection reason. After a rejection, the next reserve candidate from that same class appears automatically.
+
+The source class is visible only during this quality check so a class mismatch can be detected. It is hidden during ingredient annotation."""),
+        code("""candidate_pool_path = BENCHMARK_DIR / "quality_candidate_pool.csv"
+quality_screen_path = BENCHMARK_DIR / "quality_screen.csv"
 manifest_path = BENCHMARK_DIR / "benchmark_manifest.csv"
-if not manifest_path.exists():
+
+if manifest_path.exists() and (not candidate_pool_path.exists() or not quality_screen_path.exists()):
+    raise RuntimeError(
+        "An older pre-quality-screen packet was detected. Start a fresh Notebook 01 session; "
+        "do not reuse that manifest."
+    )
+if not candidate_pool_path.exists() and not manifest_path.exists():
     subprocess.run([
         sys.executable,
         str(PROJECT_ROOT / "scripts/build_benchmark.py"),
+        "prepare",
         "--dataset-root", str(TARGET_DATASET_ROOT),
         "--output-dir", str(BENCHMARK_DIR),
     ], check=True)
-else:
-    print("Using existing sealed manifest:", manifest_path)
 
-manifest = pd.read_csv(manifest_path, keep_default_na=False)
-lock = json.loads((BENCHMARK_DIR / "manifest_lock.json").read_text(encoding="utf-8"))
-
-assert len(manifest) == 260, f"Expected 260 rows, found {len(manifest)}"
-assert manifest["sample_id"].is_unique
-assert manifest.groupby("food_class").size().eq(20).all()
-assert sorted(manifest["food_class"].unique()) == sorted(config["benchmark"]["expected_classes"])
-assert manifest_digest(manifest) == lock["manifest_sha256"], "Existing manifest no longer matches its lock"
-assert sha256_file(ontology_path) == lock["ontology_sha256"], "Ontology changed after benchmark sealing"
-assert sha256_file(config_path) == lock["config_sha256"], "Config changed after benchmark sealing"
-assert hashlib.sha256(build_visible_prompt(ontology).encode("utf-8")).hexdigest() == lock["vlm_prompt_sha256"]
-assert project_protocol_digest(PROJECT_ROOT) == lock["project_protocol_sha256"], "Protocol code changed after sealing"
-per_class_splits = manifest.groupby(["food_class", "split"]).size().unstack(fill_value=0)
-assert per_class_splits["train"].eq(12).all()
-assert per_class_splits["validation"].eq(4).all()
-assert per_class_splits["test"].eq(4).all()
-
-print(json.dumps(lock, indent=2, sort_keys=True))
-display(per_class_splits)
-display(pd.read_csv(BENCHMARK_DIR / "corrupt_images.csv").head())"""),
-        markdown("""## Create two independent per-image annotation passes
-
-Each image receives `visible_ingredients`, `uncertain_ingredients`, explicit exclusion or all-negative flags, and notes from two independent passes. The two sheets use different random orders. Per-image judgments are required because a class-level recipe list cannot serve as ground truth for every photograph.
-
-Read `docs/ANNOTATION_GUIDE.md` completely before starting. Annotators must not inspect each other's sheets. If you personally perform both passes, use a washout period and disclose that it is a weaker design than two people."""),
-        code("""print((PROJECT_ROOT / "docs/ANNOTATION_GUIDE.md").read_text(encoding="utf-8"))"""),
-        code("""# Choose exactly one sheet for this independent pass, then run this cell.
-# Use a fresh session and choose annotator_b for the second pass.
-ANNOTATOR_ID = "annotator_a"  # change to annotator_b only in the separate second pass
-
-if ANNOTATOR_ID not in {"annotator_a", "annotator_b"}:
-    raise ValueError("ANNOTATOR_ID must be annotator_a or annotator_b")
-
-annotation_path = BENCHMARK_DIR / f"annotations_{ANNOTATOR_ID}.csv"
-sheet = pd.read_csv(annotation_path, keep_default_na=False)
-from src.annotations import validate_annotation_sheet
-sheet = validate_annotation_sheet(sheet, manifest, ontology, require_complete=False)
-print("Editing:", annotation_path)
-print("Do not open the other annotator's CSV during this pass.")"""),
-        code("""from src.annotation_ui import AnnotationApp
-
-app = AnnotationApp(
-    sheet=sheet,
-    ontology=ontology,
-    image_root=TARGET_DATASET_ROOT,
-    output_csv=annotation_path,
+candidate_pool = pd.read_csv(candidate_pool_path, keep_default_na=False)
+quality_screen = pd.read_csv(quality_screen_path, keep_default_na=False)
+from src.quality import quality_screen_progress, validate_quality_screen
+quality_screen = validate_quality_screen(
+    quality_screen, candidate_pool, config["benchmark"]["samples_per_class"], require_complete=False
 )
-app.display()"""),
-        markdown("""## Annotation completion check and export
+print(json.dumps(
+    quality_screen_progress(quality_screen, candidate_pool, config["benchmark"]["samples_per_class"]),
+    indent=2, sort_keys=True,
+))"""),
+        code("""# Review until every class has 20 accepted images. Each click is saved to quality_screen.csv.
+from src.quality_ui import QualityScreenApp
 
-The validator below does not accept blank rows, unknown labels, or labels marked both visible and uncertain. If an assessable image supports none of the 43 labels, select `No supported ontology label`; never force a positive. Export the packet after each session; `/kaggle/working` is temporary."""),
-        code("""from src.annotations import annotation_progress, validate_annotation_sheet
-
-saved_sheet = pd.read_csv(annotation_path, keep_default_na=False)
-progress = annotation_progress(saved_sheet)
-print(progress)
-
-if progress["remaining"] == 0:
-    validate_annotation_sheet(saved_sheet, manifest, ontology, require_complete=True)
-    print("This annotation pass is structurally complete.")
+current_quality_progress = quality_screen_progress(
+    quality_screen, candidate_pool, config["benchmark"]["samples_per_class"]
+)
+if not manifest_path.exists() and not current_quality_progress["complete"]:
+    quality_app = QualityScreenApp(
+        screen=quality_screen,
+        candidate_pool=candidate_pool,
+        image_root=TARGET_DATASET_ROOT,
+        output_csv=quality_screen_path,
+        samples_per_class=config["benchmark"]["samples_per_class"],
+    )
+    quality_app.display()
+elif current_quality_progress["complete"] and not manifest_path.exists():
+    print("Quality screen is complete. Run the sealing/export cell below.")
 else:
-    print("Resume the interface before moving to notebook 02.")
+    print("Quality screen is already complete and the benchmark is sealed.")"""),
+        markdown("""## Finalize the quality screen and seal the benchmark
+
+Rerun the next cell after screening. If the screen is incomplete, it exports a resumable packet and leaves the manifest unsealed. When every class has 20 accepted images, it assigns the 12/4/4 split, creates the 260-row primary sheet and 104-row secondary sheet, and cryptographically locks the result."""),
+        code("""quality_screen = pd.read_csv(quality_screen_path, keep_default_na=False)
+quality_progress = quality_screen_progress(
+    quality_screen, candidate_pool, config["benchmark"]["samples_per_class"]
+)
+print(json.dumps(quality_progress, indent=2, sort_keys=True))
+
+if quality_progress["complete"] and not manifest_path.exists():
+    subprocess.run([
+        sys.executable,
+        str(PROJECT_ROOT / "scripts/build_benchmark.py"),
+        "seal",
+        "--output-dir", str(BENCHMARK_DIR),
+    ], check=True)
 
 archive_base = ARTIFACT_ROOT / "benchmark_packet"
 archive_path = shutil.make_archive(str(archive_base), "zip", BENCHMARK_DIR)
+print("Download this resumable checkpoint:", archive_path)
+
+BENCHMARK_SEALED = manifest_path.exists()
+if BENCHMARK_SEALED:
+    manifest = pd.read_csv(manifest_path, keep_default_na=False)
+    lock = json.loads((BENCHMARK_DIR / "manifest_lock.json").read_text(encoding="utf-8"))
+    assert len(manifest) == 260 and manifest["sample_id"].is_unique
+    assert manifest.groupby("food_class").size().eq(20).all()
+    assert manifest_digest(manifest) == lock["manifest_sha256"]
+    assert sha256_file(candidate_pool_path) == lock["candidate_pool_sha256"]
+    assert sha256_file(quality_screen_path) == lock["quality_screen_sha256"]
+    assert lock["screened_before_split"] is True
+    assert lock["annotation_rows"] == {"annotator_a": 260, "annotator_b": 104}
+    assert sha256_file(ontology_path) == lock["ontology_sha256"]
+    assert sha256_file(config_path) == lock["config_sha256"]
+    assert hashlib.sha256(build_visible_prompt(ontology).encode("utf-8")).hexdigest() == lock["vlm_prompt_sha256"]
+    assert project_protocol_digest(PROJECT_ROOT) == lock["project_protocol_sha256"]
+    per_class_splits = manifest.groupby(["food_class", "split"]).size().unstack(fill_value=0)
+    assert per_class_splits["train"].eq(12).all()
+    assert per_class_splits["validation"].eq(4).all()
+    assert per_class_splits["test"].eq(4).all()
+    print("Benchmark sealed after semantic quality screening.")
+    display(per_class_splits)
+else:
+    print("Benchmark is not sealed yet. Continue the quality interface, then rerun this cell.")"""),
+        markdown("""## Stage 2: Annotate visible ingredients
+
+Read `docs/ANNOTATION_GUIDE.md` before starting. Annotator A labels all 260 images. Annotator B works independently on the 104 validation and test images only. The annotation interface hides source class and split. Do not inspect the other person's sheet."""),
+        code("""print((PROJECT_ROOT / "docs/ANNOTATION_GUIDE.md").read_text(encoding="utf-8"))"""),
+        code("""# Choose exactly one independent pass. Use a separate session for annotator_b.
+ANNOTATOR_ID = "annotator_a"
+ANNOTATION_READY = bool(BENCHMARK_SEALED)
+
+if ANNOTATOR_ID not in {"annotator_a", "annotator_b"}:
+    raise ValueError("ANNOTATOR_ID must be annotator_a or annotator_b")
+if ANNOTATION_READY:
+    annotation_path = BENCHMARK_DIR / f"annotations_{ANNOTATOR_ID}.csv"
+    annotation_manifest = (
+        manifest
+        if ANNOTATOR_ID == "annotator_a"
+        else manifest[manifest["split"].isin(config["benchmark"]["secondary_annotation_splits"])].copy()
+    )
+    sheet = pd.read_csv(annotation_path, keep_default_na=False)
+    from src.annotations import validate_annotation_sheet
+    sheet = validate_annotation_sheet(sheet, annotation_manifest, ontology, require_complete=False)
+    expected_rows = 260 if ANNOTATOR_ID == "annotator_a" else 104
+    assert len(sheet) == expected_rows
+    print(f"Editing {ANNOTATOR_ID}: {len(sheet)} images")
+    print("Do not open the other annotator's CSV during this pass.")
+else:
+    print("Annotation is blocked until quality screening is complete and the manifest is sealed.")"""),
+        code("""from src.annotation_ui import AnnotationApp
+
+if ANNOTATION_READY:
+    app = AnnotationApp(
+        sheet=sheet,
+        ontology=ontology,
+        image_root=TARGET_DATASET_ROOT,
+        output_csv=annotation_path,
+    )
+    app.display()
+else:
+    print("Return to the quality-screen interface above.")"""),
+        markdown("""## Annotation progress and export
+
+Rerun this cell whenever you stop. The interface saves each confirmed image immediately, while this cell packages the full quality screen, lock, manifest, and annotation sheets for safe resumption."""),
+        code("""from src.annotations import annotation_progress, validate_annotation_sheet
+
+if ANNOTATION_READY:
+    saved_sheet = pd.read_csv(annotation_path, keep_default_na=False)
+    progress = annotation_progress(saved_sheet)
+    print(progress)
+    if progress["remaining"] == 0:
+        validate_annotation_sheet(saved_sheet, annotation_manifest, ontology, require_complete=True)
+        print(f"{ANNOTATOR_ID} is structurally complete: {len(saved_sheet)} images.")
+    else:
+        print("Resume this annotation pass before Notebook 02.")
+
+archive_path = shutil.make_archive(str(ARTIFACT_ROOT / "benchmark_packet"), "zip", BENCHMARK_DIR)
 print("Download and preserve:", archive_path)"""),
         markdown("""## Handoff to Notebook 02
 
-Proceed only when `annotations_annotator_a.csv` and `annotations_annotator_b.csv` are independently complete. Upload the benchmark packet as a private Kaggle dataset or attach it to Notebook 02. Notebook 02 validates the lock digest, measures agreement, forces explicit adjudication, and only then trains models."""),
+Proceed only when Annotator A has completed 260 images and Annotator B has independently completed the 104 validation/test images. Notebook 02 measures agreement on those 104 images, adjudicates their disagreements, combines them with the primary training labels, and only then trains and evaluates models."""),
     ]
 )
 
@@ -236,7 +308,7 @@ NOTEBOOK_02 = notebook(
     [
         markdown("""# 02: Train and Evaluate the CNN and VLM Benchmark
 
-Run this notebook only after Notebook 01 produced two complete annotation sheets. It validates and adjudicates the benchmark, trains honest baselines, compares a frozen VLM on the same ontology, and opens the sealed test exactly once after all choices are frozen.
+Run this notebook only after Annotator A completed all 260 images and Annotator B independently completed the 104 validation/test images. It validates the screened benchmark, measures agreement and adjudicates evaluation-label disagreements, trains honest baselines, compares a frozen VLM on the same ontology, and opens the sealed test exactly once after all choices are frozen.
 
 No headline score is generated while annotations or adjudications are missing."""),
         code("""# Kaggle setup: clone project files if this notebook was imported alone.
@@ -294,7 +366,7 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print("Device:", DEVICE)"""),
         markdown("""## Verify benchmark integrity and annotation completeness
 
-The manifest hash must match the pre-annotation lock, and two complete sheets with distinct annotator IDs are required. Training and evaluation remain blocked if the split has changed or either annotation pass is incomplete."""),
+The semantic quality screen and candidate pool must match the pre-annotation lock. The 260-row primary sheet and 104-row evaluation-only secondary sheet require distinct annotators. Training remains blocked if screening, split membership, either sheet, or protocol code has changed."""),
         code("""# Point this to the packet from Notebook 01 (directory, manifest, or ZIP).
 # If exactly one manifest/packet ZIP exists under /kaggle/input, it is selected automatically.
 explicit_packet = os.environ.get("FOOD_VLM_BENCHMARK_PACKET")
@@ -327,6 +399,14 @@ lock = json.loads((BENCHMARK_PACKET_DIR / "manifest_lock.json").read_text(encodi
 actual_digest = manifest_digest(manifest)
 if actual_digest != lock["manifest_sha256"]:
     raise RuntimeError("Manifest lock mismatch; do not train or evaluate")
+candidate_pool_path = BENCHMARK_PACKET_DIR / "quality_candidate_pool.csv"
+quality_screen_path = BENCHMARK_PACKET_DIR / "quality_screen.csv"
+if sha256_file(candidate_pool_path) != lock.get("candidate_pool_sha256"):
+    raise RuntimeError("Quality candidate pool changed after benchmark sealing")
+if sha256_file(quality_screen_path) != lock.get("quality_screen_sha256"):
+    raise RuntimeError("Quality-screen decisions changed after benchmark sealing")
+if lock.get("screened_before_split") is not True:
+    raise RuntimeError("Benchmark was not semantically screened before split assignment")
 if sha256_file(ontology_path) != lock.get("ontology_sha256"):
     raise RuntimeError("Ontology content changed after the benchmark was sealed")
 if sha256_file(config_path) != lock.get("config_sha256"):
@@ -345,6 +425,17 @@ actual_split_counts = manifest.groupby(["food_class", "split"]).size().unstack(f
 if any(not actual_split_counts[split_name].eq(count).all() for split_name, count in expected_split_counts.items()):
     raise RuntimeError("Per-class 12/4/4 split invariant failed")
 
+from src.quality import validate_quality_screen
+candidate_pool = pd.read_csv(candidate_pool_path, keep_default_na=False)
+quality_screen = validate_quality_screen(
+    pd.read_csv(quality_screen_path, keep_default_na=False),
+    candidate_pool,
+    config["benchmark"]["samples_per_class"],
+    require_complete=True,
+)
+if lock.get("annotation_rows") != {"annotator_a": 260, "annotator_b": 104}:
+    raise RuntimeError("Locked annotation coverage must be 260 primary and 104 secondary rows")
+
 target_cfg = config["datasets"]["indonesian_target"]
 explicit_target = os.environ.get(target_cfg["path_env"])
 TARGET_DATASET_ROOT = Path(explicit_target) if explicit_target else Path(kagglehub.dataset_download(target_cfg["slug"]))
@@ -362,41 +453,68 @@ if missing_images or changed_images:
     )
 print("Manifest lock verified:", actual_digest)
 print("All 260 sampled image hashes verified.")
+print("Semantic quality screen verified:", int(quality_screen["decision"].eq("reject").sum()), "rejections")
 print("Target images:", TARGET_DATASET_ROOT)"""),
         code("""from src.annotations import (
     annotation_agreement,
     build_adjudication_queue,
+    combine_primary_and_adjudicated_evaluation,
     finalize_adjudication,
     validate_annotation_sheet,
 )
 
-first = validate_annotation_sheet(
+primary = validate_annotation_sheet(
     pd.read_csv(BENCHMARK_PACKET_DIR / "annotations_annotator_a.csv", keep_default_na=False),
     manifest, ontology, require_complete=True,
 )
-second = validate_annotation_sheet(
+evaluation_manifest = manifest[manifest["split"].isin(config["benchmark"]["secondary_annotation_splits"])].copy()
+secondary = validate_annotation_sheet(
     pd.read_csv(BENCHMARK_PACKET_DIR / "annotations_annotator_b.csv", keep_default_na=False),
-    manifest, ontology, require_complete=True,
+    evaluation_manifest, ontology, require_complete=True,
 )
-if first["annotator_id"].iloc[0] == second["annotator_id"].iloc[0]:
+if len(primary) != 260 or len(secondary) != 104:
+    raise RuntimeError("Annotation coverage must be 260 primary and 104 secondary rows")
+if primary["annotator_id"].iloc[0] == secondary["annotator_id"].iloc[0]:
     raise RuntimeError("Two distinct annotator IDs are required")
 
-agreement = annotation_agreement(first, second, ontology)
+primary_evaluation = validate_annotation_sheet(
+    primary[primary["sample_id"].isin(evaluation_manifest["sample_id"])].copy(),
+    evaluation_manifest, ontology, require_complete=True,
+)
+
+agreement = annotation_agreement(primary_evaluation, secondary, ontology)
 write_json(RUN_DIR / "annotation_agreement.json", agreement)
 print(json.dumps(agreement, indent=2, sort_keys=True))
 
 adjudication_path = RUN_DIR / "adjudication_queue.csv"
+expected_adjudication_queue = build_adjudication_queue(
+    primary_evaluation, secondary, evaluation_manifest
+)
 if adjudication_path.exists():
     adjudication_queue = pd.read_csv(adjudication_path, keep_default_na=False)
+    mutable_resolution_columns = {
+        "resolved_visible_ingredients", "resolved_uncertain_ingredients", "resolved_unreadable",
+        "resolved_non_food", "resolved_no_visible_ontology_label", "resolution_notes",
+    }
+    immutable_columns = [
+        column for column in expected_adjudication_queue.columns
+        if column not in mutable_resolution_columns
+    ]
+    if not set(immutable_columns).issubset(adjudication_queue.columns):
+        raise RuntimeError("Existing adjudication queue has an incompatible schema")
+    existing_base = adjudication_queue[immutable_columns].sort_values("sample_id").reset_index(drop=True)
+    expected_base = expected_adjudication_queue[immutable_columns].sort_values("sample_id").reset_index(drop=True)
+    if not existing_base.astype(str).equals(expected_base.astype(str)):
+        raise RuntimeError("Existing adjudication queue belongs to different annotations or benchmark")
 else:
-    adjudication_queue = build_adjudication_queue(first, second, manifest)
+    adjudication_queue = expected_adjudication_queue
     adjudication_queue.to_csv(adjudication_path, index=False)
 
 print("Rows requiring human adjudication:", int(adjudication_queue["status"].eq("needs_adjudication").sum()))
 print("Use the blinded interface below; do not inspect food_class or split while adjudicating.")"""),
         markdown("""## Adjudicate annotation disagreements
 
-Exact agreements are accepted, while every disagreement requires a human resolution and rationale. An automatic union would inflate recall targets, and an automatic intersection would remove difficult labels. Neither rule is neutral."""),
+Exact evaluation-set agreements are accepted, while every evaluation disagreement requires a human resolution and rationale. An automatic union would inflate recall targets, and an automatic intersection would remove difficult labels. Neither rule is neutral."""),
         code("""# Run only when disagreements exist. The interface saves after each resolution.
 from src.annotation_ui import AdjudicationApp
 
@@ -416,12 +534,18 @@ else:
     print("No unresolved disagreements require adjudication.")"""),
         code("""# Rerun after the interface is complete. This is a hard gate.
 adjudication_queue = pd.read_csv(adjudication_path, keep_default_na=False)
-final_annotations = finalize_adjudication(adjudication_queue, ontology)
-if set(final_annotations["sample_id"]) != set(manifest["sample_id"]):
-    raise RuntimeError("Adjudicated annotations do not match the sealed manifest")
+adjudicated_evaluation = finalize_adjudication(adjudication_queue, ontology)
+final_annotations = combine_primary_and_adjudicated_evaluation(
+    primary,
+    adjudicated_evaluation,
+    manifest,
+    config["benchmark"]["secondary_annotation_splits"],
+)
 final_annotation_path = RUN_DIR / "final_annotations.csv"
 final_annotations.to_csv(final_annotation_path, index=False)
-print("Final adjudicated annotations:", len(final_annotations))
+print("Final annotations:", len(final_annotations))
+print("Primary-only training rows:", int(final_annotations["annotation_source"].eq("primary_annotator_only").sum()))
+print("Double-annotated evaluation rows:", int(final_annotations["annotation_source"].eq("double_annotated_adjudicated").sum()))
 print("Valid all-negative rows:", int(final_annotations["no_visible_ontology_label"].sum()))"""),
         markdown("""## Prepare optional recipe-presence pretraining
 

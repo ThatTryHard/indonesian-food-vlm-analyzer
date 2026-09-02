@@ -29,7 +29,14 @@ def _validate_config(config: dict[str, Any]) -> None:
     if benchmark["samples_per_class"] * len(expected_classes) != 260:
         raise ValueError("The frozen portfolio benchmark must contain exactly 260 images")
     if benchmark["required_annotators"] != 2:
-        raise ValueError("This protocol requires exactly two independent annotation passes")
+        raise ValueError("This protocol requires a primary and secondary annotator")
+    secondary_splits = benchmark["secondary_annotation_splits"]
+    if set(secondary_splits) != {"validation", "test"} or len(secondary_splits) != 2:
+        raise ValueError("The secondary annotator must independently label validation and test")
+    if benchmark["quality_candidates_per_class"] < benchmark["samples_per_class"]:
+        raise ValueError("quality_candidates_per_class must leave enough candidates for the benchmark")
+    if not str(benchmark["quality_screen_version"]).strip():
+        raise ValueError("quality_screen_version cannot be blank")
 
     training = config["training"]
     thresholds = training["global_threshold_grid"]

@@ -1,7 +1,7 @@
 {
   "project": {
     "name": "Indonesian Food Visible-Ingredient Benchmark",
-    "version": "2.0.0",
+    "version": "2.1.0",
     "primary_task": "per-image visible ingredient recognition",
     "artifact_subdir": "indonesian-food-vlm-artifacts",
     "seed": 42
@@ -44,8 +44,11 @@
       "Soto"
     ],
     "required_annotators": 2,
+    "secondary_annotation_splits": ["validation", "test"],
+    "quality_candidates_per_class": 100,
+    "quality_screen_version": "quality-v1",
     "perceptual_hash_max_distance": 2,
-    "manifest_version": "visible-v1"
+    "manifest_version": "visible-v2"
   },
   "training": {
     "image_size": 224,
